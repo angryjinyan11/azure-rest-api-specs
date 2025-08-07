@@ -719,10 +719,12 @@ export async function getCheckRunTuple(
 
     const latestCheck = sortedChecks[0];
 
-    // just handling both for ease of integration testing
+    // just handling both names for ease of integration testing
     if (
-      latestCheck.name === "[TEST-IGNORE] Summarize PR Impact" ||
-      latestCheck.name === "Summarize PR Impact"
+      (latestCheck.name === "[TEST-IGNORE] Summarize PR Impact" ||
+        latestCheck.name === "Summarize PR Impact") &&
+      latestCheck.status === "completed" &&
+      latestCheck.conclusion === "success"
     ) {
       const workflowRuns = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
         owner,
@@ -783,8 +785,15 @@ export async function getCheckRunTuple(
     });
 
     if (branchRules) {
-      requiredCheckNames = getRequiredChecksFromBranchRuleOutput(branchRules);
+      requiredCheckNames = getRequiredChecksFromBranchRuleOutput(branchRules).filter(
+        // "Automated merging requirements met" may be required in repo settings, to ensure PRs cannot be merged unless
+        // it's passing.  However, it must be excluded from our list of requiredCheckNames, since it's status is set
+        // by our own workflow.  If this check isn't excluded, it creates a deadlock where it can never be set.
+        (checkName) => checkName !== AUTOMATED_CHECK_NAME,
+      );
     }
+  } else {
+    requiredCheckNames = ["Summarize PR Impact", "[TEST-IGNORE] Summarize PR Impact"];
   }
 
   const filteredReqCheckRuns = unifiedCheckRuns.filter(
